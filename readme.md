@@ -3,3 +3,9 @@
 
 project0 是简单地cpp操作，矩阵运算细心点看就行了，比如row，col-》对应的下标就是rowi*col+coli
 
+project1-1 LRU REPLACEMENT POLICY
+实现lru replacer
+
+- pin表示线程在使用，所以不能被回收，所以从中移出
+- unpin表示最近使用完，加入队列
+- 有新的要加入，或者扫描触发，Victim移出最旧的，
