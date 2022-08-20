@@ -18,3 +18,6 @@ project1-2 BufferPoil
     - 是否dirty
     - 
 
+project1-3 Parrallel
+- 单个mananger会导致多个访问时，过度竞争锁，所以把page的管理分散到多个manager里，每次新申请page，都从新的manager偏移开始尝试申请page，以分散page在managers中的分布
+
