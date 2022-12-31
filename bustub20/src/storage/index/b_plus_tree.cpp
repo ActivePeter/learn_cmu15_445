@@ -227,7 +227,7 @@ bool BPLUSTREE_TYPE::InsertIntoLeaf(const KeyType &key, const ValueType &value,
     buffer_pool_manager_->UnpinPage(newp->GetPageId(),true);
   }
   //路径上被搜索到的都被concurr锁了,concurr解锁时自动unpin
-  // buffer_pool_manager_->UnpinPage(lf->GetPageId(),true);
+  buffer_pool_manager_->UnpinPage(lf->GetPageId(),true);
   return true;
 }
 
@@ -809,13 +809,13 @@ Page *BPLUSTREE_TYPE::FindLeafPage(const KeyType &key,
   while(1){
     curpage=buffer_pool_manager_->FetchPage(curpageid);
     auto page=(ParentPage*)curpage->GetData();
-    if(conccur){
-      conccur->lock_one(page);
-      //第一层没有pre
-      if(curpageid!=root_page_id_){
-        conccur->if_safe_then_free_pre();
-      }
-    }
+    // if(conccur){
+    //   conccur->lock_one(page);
+    //   //第一层没有pre
+    //   if(curpageid!=root_page_id_){
+    //     conccur->if_safe_then_free_pre();
+    //   }
+    // }
     
 
     //看子节点会不会
@@ -832,7 +832,8 @@ Page *BPLUSTREE_TYPE::FindLeafPage(const KeyType &key,
         
       }else{
         page_id_t v=ip->Lookup(key,comparator_);
-        if(!conccur){//没加锁就先unpin了，
+        // if(!conccur)
+        {//没加锁就先unpin了，
           //unpin 父page
           buffer_pool_manager_->UnpinPage(curpageid,false);
         }

@@ -57,6 +57,10 @@ int BPlusTreePage::GetMaxSize() const { return max_size_; }
 void BPlusTreePage::SetMaxSize(int size) {
     printf("page set max sz %d\n",size);
     max_size_=size;
+    new ((char*)&latch_) std::mutex();
+    // latch_.lock();
+    // latch_.unlock();
+    // printf("test lock %d \n",page_id_);
 }
 
 /*

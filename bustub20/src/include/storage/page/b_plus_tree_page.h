@@ -75,8 +75,14 @@ class BPlusTreePage {
     // latch_.RUnlock();
   }
   void WLock(){
+    printf("lock %d \n",page_id_);
+    std::mutex test;
+    test.lock();
+    printf("locked1\n");
     // latch_.WLock();
     latch_.lock();
+
+    printf("locked2\n");
   }
   void WUnlock(){
     // latch_.WUnlock();
