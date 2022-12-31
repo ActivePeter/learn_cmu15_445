@@ -45,6 +45,8 @@ enum class IndexPageType { INVALID_INDEX_PAGE = 0, LEAF_PAGE, INTERNAL_PAGE };
  */
 class BPlusTreePage {
  public:
+  // BPlusTreePage(){}
+  // virtual ~BPlusTreePage(){}
   bool IsLeafPage() const;
   bool IsRootPage() const;
   void SetPageType(IndexPageType page_type);

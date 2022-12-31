@@ -96,7 +96,7 @@ bool BPLUSTREE_TYPE::GetValue(
     while(1){
       // printf("GetValue loop");
       auto page_=buffer_pool_manager_->FetchPage(curpageid);
-      auto page=(ParentPage*)page_->GetData();
+      auto page=(ParentPage*)(LeafPage*)page_->GetData();
       if(page->IsLeafPage()){
         LeafPage* lfp=(LeafPage*)page;
         ValueType ret;
@@ -163,6 +163,7 @@ Page* BPLUSTREE_TYPE::_NewInternalPage(page_id_t parent_id){
     ExceptionType::OUT_OF_MEMORY,"_NewInternalPage");
   
   InternalPage* p=PAGE_REF_INTERNEL(page);
+  new (p) InternalPage();
   p->Init(pid,parent_id,internal_max_size_);
   
   return page;
@@ -181,6 +182,7 @@ void BPLUSTREE_TYPE::StartNewTree(const KeyType &key, const ValueType &value) {
   if(page){
     root_page_id_=pid;//获取到pageid
     UpdateRootPageId(root_page_id_);
+    new (page->GetData()) LeafPage();
     LeafPage* lfpagecast=(LeafPage*)page->GetData();
     lfpagecast->Init(pid,INVALID_PAGE_ID,leaf_max_size_);
     lfpagecast->Insert(key,value,comparator_);
@@ -255,18 +257,20 @@ N *BPLUSTREE_TYPE::Split(N *node) {
   page_id_t pid;
   auto newp_=buffer_pool_manager_->NewPage(&pid);
   if(newp_){
-    auto newp=reinterpret_cast<BPlusTreePage*>(newp_->GetData());
+    auto newp=(ParentPage*)(LeafPage*)(newp_->GetData());
     if(n->IsLeafPage()){
       // printf("split leaf\n");
       //leafpage copy
-      LeafPage*old=reinterpret_cast<LeafPage*>(n);
-      LeafPage* lfp=reinterpret_cast<LeafPage*>(newp);
+      LeafPage*old=(LeafPage*)(n);
+      LeafPage* lfp=(LeafPage*)(newp);
+      new ((char*)lfp) LeafPage();
       lfp->Init(pid,INVALID_PAGE_ID,old->GetMaxSize());
       //后半部分，复制到新page
       old->MoveHalfTo(lfp);
       auto oldnext=old->GetNextPageId();
       old->SetNextPageId(lfp->GetPageId());
       lfp->SetNextPageId(oldnext);
+      printf("split sz %d\n",lfp->SplitSize());
       return reinterpret_cast<N*>(lfp);
     }else{
       // printf("split internel\n");
@@ -808,15 +812,21 @@ Page *BPLUSTREE_TYPE::FindLeafPage(const KeyType &key,
   
   while(1){
     curpage=buffer_pool_manager_->FetchPage(curpageid);
-    auto page=(ParentPage*)curpage->GetData();
-    // if(conccur){
-    //   conccur->lock_one(page);
-    //   //第一层没有pre
-    //   if(curpageid!=root_page_id_){
-    //     conccur->if_safe_then_free_pre();
-    //   }
-    // }
-    
+    ParentPage* page=(ParentPage*)(LeafPage*)curpage->GetData();
+    // ParentPage* page2=reinterpret_cast<ParentPage*>(curpage->GetData());
+    // // if(conccur){
+    // //   conccur->lock_one(page);
+    // //   //第一层没有pre
+    // //   if(curpageid!=root_page_id_){
+    // //     conccur->if_safe_then_free_pre();
+    // //   }　
+    // // }
+    // auto lfp=(LeafPage*)page;
+    // auto lfp_=(LeafPage*)page2;
+    // auto lfp2=static_cast<LeafPage*>(page);
+    // auto lfp3=reinterpret_cast<LeafPage*>(page);
+    // printf("%ld",(uint64_t)lfp+(uint64_t)lfp2+(uint64_t)lfp3
+    //   +(uint64_t)page2+(uint64_t)lfp_);
 
     //看子节点会不会
     if(page->IsLeafPage()){
@@ -832,6 +842,7 @@ Page *BPLUSTREE_TYPE::FindLeafPage(const KeyType &key,
         
       }else{
         page_id_t v=ip->Lookup(key,comparator_);
+        assert(v!=-1);
         // if(!conccur)
         {//没加锁就先unpin了，
           //unpin 父page

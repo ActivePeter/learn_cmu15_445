@@ -34,6 +34,7 @@ void B_PLUS_TREE_LEAF_PAGE_TYPE::Init(page_id_t page_id, page_id_t parent_id, in
   SetParentPageId(parent_id);
   SetMaxSize(max_size);
   next_page_id_=INVALID_PAGE_ID;
+  printf("init leaf %d\n",page_id);
   // seq.reserve(max_size);
 }
 
@@ -141,6 +142,7 @@ int B_PLUS_TREE_LEAF_PAGE_TYPE::Insert(
 INDEX_TEMPLATE_ARGUMENTS
 void B_PLUS_TREE_LEAF_PAGE_TYPE::MoveHalfTo(BPlusTreeLeafPage *recipient) {
   if(GetSize()!=GetMaxSize()+1){
+    
     throw Exception(ExceptionType::INVALID,"move half when not full");
   }
   auto leftsz=GetSize()-GetSize()/2;
@@ -163,6 +165,7 @@ void B_PLUS_TREE_LEAF_PAGE_TYPE::CopyNFrom(MappingType *items, int size) {
 
 INDEX_TEMPLATE_ARGUMENTS
 int B_PLUS_TREE_LEAF_PAGE_TYPE::SplitSize(){
+  printf("leaf split size %d\n",GetMaxSize()+1);
   return GetMaxSize()+1;
 }
 
