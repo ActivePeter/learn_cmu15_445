@@ -4,6 +4,7 @@
 #include <cassert>
 
 #include "storage/index/index_iterator.h"
+#include "storage/index/b_plus_tree.h"
 
 namespace bustub {
 
@@ -13,15 +14,20 @@ namespace bustub {
  */
 
 INDEX_TEMPLATE_ARGUMENTS
-INDEXITERATOR_TYPE::IndexIterator(
-    Page* curpage,int pos,BufferPoolManager* bpman){
-    curpage_=curpage;
-    pos_=pos;
+INDEXITERATOR_TYPE::IndexIterator(BufferPoolManager* bpman){
+    // curpage_=curpage;
+    // pos_=pos;
     bpman_=bpman;
+    this->concurr_=std::unique_ptr<BPlusTreeConcurrentControl>(
+        new BPlusTreeConcurrentControl(BPlusTreeConcurrentControlMode::Lookup,bpman_));
 }
-
 INDEX_TEMPLATE_ARGUMENTS
-INDEXITERATOR_TYPE::IndexIterator() = default;
+void INDEXITERATOR_TYPE::init(int pos,Page* curpage){
+    pos_=pos;
+    this->curpage_=curpage;
+}
+// INDEX_TEMPLATE_ARGUMENTS
+// INDEXITERATOR_TYPE::IndexIterator() = default;
 
 INDEX_TEMPLATE_ARGUMENTS
 INDEXITERATOR_TYPE::~IndexIterator() {

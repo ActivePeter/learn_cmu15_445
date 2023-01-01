@@ -39,18 +39,27 @@ public:
   void lock_one(BPlusTreePage*);
   // void wlock_one(BPlusTreePage*);
   void if_safe_then_free_pre();
+
+  BPlusTreeConcurrentControl(BPlusTreeConcurrentControl const&) = delete;
+  BPlusTreeConcurrentControl& operator=(BPlusTreeConcurrentControl const&) = delete;
+  BPlusTreeConcurrentControl(BPlusTreeConcurrentControl&&) = default;
   BPlusTreeConcurrentControl(
     BPlusTreeConcurrentControlMode mode,
     BufferPoolManager*bpman_ref){
     mode_=mode;
     bpman_ref_=bpman_ref;
   }
+  BPlusTreeConcurrentControl()=default;
   ~BPlusTreeConcurrentControl(){
     for(auto &v:locked_pages_){
       unlock_and_unpin_page(v);
     }
   }
-  
+  void init(BPlusTreeConcurrentControlMode mode,
+    BufferPoolManager*bpman_ref){
+    mode_=mode;
+    bpman_ref_=bpman_ref;
+  }
 private:
   void free_pre();
   void unlock_and_unpin_page(BPlusTreePage*page){
@@ -129,15 +138,16 @@ class BPlusTree {
   FindSibResult FindSibInInternel(int this_index,InternalPage* ip);
  
  private:
-  void StartNewTree(const KeyType &key, const ValueType &value);
+  bool StartNewTree(const KeyType &key, const ValueType &value);
   
   
   Page* _NewInternalPage(page_id_t parent_id);
 
   bool InsertIntoLeaf(const KeyType &key, const ValueType &value, BPlusTreeConcurrentControl&conccur,Transaction *transaction = nullptr);
 
-  void InsertIntoParent(BPlusTreePage *old_node, const KeyType &key, BPlusTreePage *new_node,
-                        Transaction *transaction = nullptr);
+  void InsertIntoParent(
+    BPlusTreePage *old_node, const KeyType &key, BPlusTreePage *new_node,
+    BPlusTreeConcurrentControl& concurr,Transaction *transaction = nullptr);
 
   template <typename N>
   N *Split(N *node);
@@ -185,7 +195,7 @@ class BPlusTree {
   KeyComparator comparator_;
   int leaf_max_size_;
   int internal_max_size_;
-  
+  std::mutex big_mu_;
   // IndexPageType root_page_type;
 };
 

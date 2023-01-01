@@ -110,8 +110,13 @@ int B_PLUS_TREE_LEAF_PAGE_TYPE::Insert(
     return size_;
   }
   for(int i=0;i<size_;i++){
+    //key 已经存在，更新对应的值
+    if(comparator(key,array[i].first)==0){
+      array[i]={key,value};
+      return size_;
+    }
     //找到key<某一个元素的位置，插入
-    if(comparator(key,array[i].first)<0){
+    else if(comparator(key,array[i].first)<0){
       //从末尾开始往前移动
       for(int j=size_;j>i;j--){
         array[j]=array[j-1];

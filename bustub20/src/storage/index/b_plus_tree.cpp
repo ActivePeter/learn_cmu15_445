@@ -46,16 +46,27 @@ void BPlusTreeConcurrentControl::if_safe_then_free_pre(){
       //insert 模式，确保子节点不会split，那么就可以释放父节点
       //leaf和internel page split的size阈值不同
       // 小于阈值-1.那么+1后还没到阈值，不会触发split
-      // if(this->locked_pages_.back()->GetSize()
-      //   <this->locked_pages_.back()->SplitSize()-1){
-      //     free_pre();
-      // }
+      if(this->locked_pages_.back()->GetSize()
+        <this->locked_pages_.back()->SplitSize()-1){
+          free_pre();
+      }
+    }
+    break;
+  case BPlusTreeConcurrentControlMode::Delete:
+    {
+      //删除时
+      // 子节点为叶子节点，删除一个值后，数量变少，可能触发与边上的合并与重分配，此时父节点不应该被释放
+      // 子节点为中间节点，这个子节点后面的节点若触发了合并，那么这个节点的数量也会变化，
+      //    若触发了调整，那么这个字节点不会变化
+      // 
+
+
     }
     break;
   
   default:
-    LOG_ERROR("other concurr not impled");
-    abort();
+    // LOG_ERROR("other concurr not impled");
+    // abort();
     break;
   }
 }
@@ -139,15 +150,22 @@ bool BPLUSTREE_TYPE::Insert(
   const KeyType &key, const ValueType &value, Transaction *transaction) { 
     BPlusTreeConcurrentControl concurr(
       BPlusTreeConcurrentControlMode::Insert,this->buffer_pool_manager_);
+      // std::lock_guard<std::mutex> hold(big_mu_);
+      // big_mu_.lock();
     if(root_page_id_==INVALID_PAGE_ID){
       // printf("insert start new tree\n");
       //没有rootpage
-      StartNewTree(key,value);
+      if(!StartNewTree(key,value)){
+        //竞争 start 失败
+        goto insert_into_leaf;
+      }
       return true;
     }else{
+insert_into_leaf:
       // printf("insert into leaf\n");
       return InsertIntoLeaf(key,value,concurr,transaction);
     }
+    // big_mu_.unlock();
     return false; 
   }
 
@@ -176,18 +194,31 @@ Page* BPLUSTREE_TYPE::_NewInternalPage(page_id_t parent_id){
  * tree's root page id and insert entry directly into leaf page.
  */
 INDEX_TEMPLATE_ARGUMENTS
-void BPLUSTREE_TYPE::StartNewTree(const KeyType &key, const ValueType &value) {
+bool BPLUSTREE_TYPE::StartNewTree(const KeyType &key, const ValueType &value) {
   page_id_t pid;
   auto page=buffer_pool_manager_->NewPage(&pid);
   if(page){
+    
+    this->big_mu_.lock();
+    //此处root page id的更新一定得是原子的
+    //所以start失败就得执行另一种情况
+    if(root_page_id_!=INVALID_PAGE_ID){
+      big_mu_.unlock();
+      return false;
+    }
     root_page_id_=pid;//获取到pageid
+
     UpdateRootPageId(root_page_id_);
     new (page->GetData()) LeafPage();
     LeafPage* lfpagecast=(LeafPage*)page->GetData();
     lfpagecast->Init(pid,INVALID_PAGE_ID,leaf_max_size_);
+    lfpagecast->WLock();
     lfpagecast->Insert(key,value,comparator_);
+    lfpagecast->WUnlock();
     buffer_pool_manager_->UnpinPage(pid,true);
-    return;
+
+    big_mu_.unlock();
+    return true;
     // root_page_type=IndexPageType::LEAF_PAGE;//初始为leafpage类型
     // InitPageFromType(page,root_page_type);
   }
@@ -213,23 +244,25 @@ bool BPLUSTREE_TYPE::InsertIntoLeaf(const KeyType &key, const ValueType &value,
   LeafPage* lf=(LeafPage*)curpage->GetData();
   // auto newsize=
   lf->Insert(key,value,comparator_);
-  printf("%d\n",lf->GetSize());
-  printf("%d\n",lf->GetMaxSize()+2);
-  printf("%d\n",lf->SplitSize());
+  // printf("%d\n",lf->GetSize());
+  // printf("%d\n",lf->GetMaxSize()+2);
+  // printf("%d\n",lf->SplitSize());
   // printf("after insert sz %d, max sz %d\n",newsize,lf->GetMaxSize());
+  printf("lf sz %d %d\n",lf->GetSize(),lf->SplitSize());
   if(lf->GetSize()==lf->SplitSize()){
     //到达了maxsize，需要将leaf split
     LeafPage* newp=Split(lf);
+    // conccur.lock_one(newp);
     //1.更新父节点
     {
       //这里的key为newp中最小值
-      InsertIntoParent(lf,newp->GetItem(0).first,newp);
+      InsertIntoParent(lf,newp->GetItem(0).first,newp,conccur);
     }
     //2.新page，也需要unpin一下
-    buffer_pool_manager_->UnpinPage(newp->GetPageId(),true);
+    // buffer_pool_manager_->UnpinPage(newp->GetPageId(),true);
   }
   //路径上被搜索到的都被concurr锁了,concurr解锁时自动unpin
-  buffer_pool_manager_->UnpinPage(lf->GetPageId(),true);
+  // buffer_pool_manager_->UnpinPage(lf->GetPageId(),true);
   return true;
 }
 
@@ -303,7 +336,7 @@ N *BPLUSTREE_TYPE::Split(N *node) {
 INDEX_TEMPLATE_ARGUMENTS
 void BPLUSTREE_TYPE::InsertIntoParent(
   BPlusTreePage *old_node, const KeyType &key, BPlusTreePage *new_node,
-  Transaction *transaction) {
+  BPlusTreeConcurrentControl& concurr,Transaction *transaction) {
     InternalPage* ip;
     //1.1没有父节点，需要创建父节点
     if(old_node->GetParentPageId()==INVALID_PAGE_ID){
@@ -311,7 +344,8 @@ void BPLUSTREE_TYPE::InsertIntoParent(
       auto newip_mem=_NewInternalPage(INVALID_PAGE_ID);
       InternalPage* ip=PAGE_REF_INTERNEL(newip_mem);
       ip->BeginWithTwoNode(old_node->GetPageId(),key,new_node->GetPageId());
-      buffer_pool_manager_->UnpinPage(ip->GetPageId(),true);
+      // concurr.lock_one(ip);
+      // buffer_pool_manager_->UnpinPage(ip->GetPageId(),true);
       if(old_node->GetPageId()==root_page_id_){
         root_page_id_=newip_mem->GetPageId();
         UpdateRootPageId(root_page_id_);
@@ -325,7 +359,7 @@ void BPLUSTREE_TYPE::InsertIntoParent(
     //1.2将newnode加入到oldnode的父节点中
     auto ipmem=buffer_pool_manager_->FetchPage(old_node->GetParentPageId());
     ip=PAGE_REF_INTERNEL(ipmem);
-    
+    // concurr.lock_one(ip);
     // printf("- InsertIntoParent 1\n");
     //加入到的位置并不总是在最后，可能分裂前的节点在父节点中的区间在中间，
     //  那么分裂后，新的key应当插入在之前节点的key之后
@@ -338,8 +372,9 @@ void BPLUSTREE_TYPE::InsertIntoParent(
     if(ip->ReachSplitSize()){
       //达到最大，需要分裂
       InternalPage*newip= Split(ip);
-      InsertIntoParent(ip,newip->KeyAt(0),newip);
-      buffer_pool_manager_->UnpinPage(newip->GetPageId(),true);
+      // concurr.lock_one(newip);
+      InsertIntoParent(ip,newip->KeyAt(0),newip,concurr);
+      // buffer_pool_manager_->UnpinPage(newip->GetPageId(),true);
     }
     buffer_pool_manager_->UnpinPage(ip->GetPageId(),true);
     // printf("InsertIntoParent done\n");
@@ -380,15 +415,20 @@ void BPLUSTREE_TYPE::Remove(
   const KeyType &key, Transaction *transaction) {
     //export this private
     auto bpman=buffer_pool_manager_;
-
-    Page* p=FindLeafPage(key,nullptr);
+    BPlusTreeConcurrentControl concurr(
+      BPlusTreeConcurrentControlMode::Delete,buffer_pool_manager_
+    );
+    Page* p=FindLeafPage(key,&concurr);
     LeafPage*lp= PAGE_REF_LEAF(p);
-    pa::Unique<Page*> holdpage(p,[&](Page*& v){
-      printf("pa unique unpin page remove p %d %d\n",
-        v->GetPageId(),
-        v->GetPinCount());
-      bpman->UnpinPage(v->GetPageId(),true);
-    });
+
+    // page 的 unpin 直接交给并发管理器
+    //
+    // pa::Unique<Page*> holdpage(p,[&](Page*& v){
+    //   // printf("pa unique unpin page remove p %d %d\n",
+    //   //   v->GetPageId(),
+    //   //   v->GetPinCount());
+    //   // bpman->UnpinPage(v->GetPageId(),true);
+    // });
 
     auto oldsz=lp->GetSize();
     if(oldsz==0){
@@ -413,9 +453,9 @@ void BPLUSTREE_TYPE::Remove(
             // lp->RemoveAndDeleteRecord(key,comparator_);
           }else{
             //will unpin page when out of range;
-            {
-              auto consumehold=std::move(holdpage);
-            }
+            // {
+            //   auto consumehold=std::move(holdpage);
+            // }
             printf("pa unique unpined page remove p %d\n",root_page_id_);
             if(!buffer_pool_manager_->DeletePage(root_page_id_)){
               throw Exception(ExceptionType::INVALID,"lf page del failed");
@@ -525,11 +565,11 @@ bool BPLUSTREE_TYPE::CoalesceEdgeHandle(InternalPage** parent,
   KeyType old_parent_first_key,
   Transaction *transaction){
     auto bpman=buffer_pool_manager_;    
-    if((*parent)->GetSize()-1<(*parent)->GetMaxSize()/2){
-    //父节点没有达到半满，
+    if((*parent)->GetSize()-1>=(*parent)->GetMaxSize()/2){
+    
     if(root_page_id_==(*parent)->GetPageId()){
       
-    }else{
+    }else{//父节点没有达到半满，需要补充
       //load parent
       // 加载父节点的父节点，用于获取父节点的兄弟节点。
       Page* parent_parent=buffer_pool_manager_->FetchPage((*parent)->GetParentPageId());
@@ -763,9 +803,11 @@ bool BPLUSTREE_TYPE::AdjustRoot(BPlusTreePage *old_root_node) { return false; }
 INDEX_TEMPLATE_ARGUMENTS
 INDEXITERATOR_TYPE BPLUSTREE_TYPE::begin() { 
   KeyType k{};
-  Page* lp_page= FindLeafPage(k,nullptr,true);
-  
-  return INDEXITERATOR_TYPE(lp_page,0,buffer_pool_manager_); }
+  auto ret=INDEXITERATOR_TYPE(buffer_pool_manager_);
+  Page* lp_page= FindLeafPage(k,&ret.concurr(),true);
+  ret.init(0,lp_page);
+  return ret;
+}
 
 /*
  * Input parameter is low key, find the leaf page that contains the input key
@@ -774,15 +816,18 @@ INDEXITERATOR_TYPE BPLUSTREE_TYPE::begin() {
  */
 INDEX_TEMPLATE_ARGUMENTS
 INDEXITERATOR_TYPE BPLUSTREE_TYPE::Begin(const KeyType &key) { 
-  Page* lp_page= FindLeafPage(key,nullptr,false);
+  auto ret=INDEXITERATOR_TYPE(buffer_pool_manager_);
+  Page* lp_page= FindLeafPage(key,&ret.concurr(),false);
   LeafPage* lp= PAGE_REF_LEAF(lp_page);
   int first_big=lp->KeyIndex(key,comparator_);
   if(first_big==-1){
     // printf("Begin return1\n");
     return end();
   }
+  ret.init(first_big,lp_page);
   // printf("Begin return2\n");
-  return INDEXITERATOR_TYPE(lp_page,first_big,buffer_pool_manager_); }
+  return  ret;
+}
 
 /*
  * Input parameter is void, construct an index iterator representing the end
@@ -792,7 +837,10 @@ INDEXITERATOR_TYPE BPLUSTREE_TYPE::Begin(const KeyType &key) {
 INDEX_TEMPLATE_ARGUMENTS
 INDEXITERATOR_TYPE BPLUSTREE_TYPE::end() { 
   // printf("end return\n");
-  return INDEXITERATOR_TYPE(nullptr,0,buffer_pool_manager_); }
+  auto ret=INDEXITERATOR_TYPE(buffer_pool_manager_);
+  ret.init(0,nullptr);
+  return ret; 
+}
 
 /*****************************************************************************
  * UTILITIES AND DEBUG
@@ -814,13 +862,13 @@ Page *BPLUSTREE_TYPE::FindLeafPage(const KeyType &key,
     curpage=buffer_pool_manager_->FetchPage(curpageid);
     ParentPage* page=(ParentPage*)(LeafPage*)curpage->GetData();
     // ParentPage* page2=reinterpret_cast<ParentPage*>(curpage->GetData());
-    // // if(conccur){
-    // //   conccur->lock_one(page);
-    // //   //第一层没有pre
-    // //   if(curpageid!=root_page_id_){
-    // //     conccur->if_safe_then_free_pre();
-    // //   }　
-    // // }
+    if(conccur){
+      conccur->lock_one(page);
+      //第一层没有pre
+      if(curpageid!=root_page_id_){
+        conccur->if_safe_then_free_pre();
+      }
+    }
     // auto lfp=(LeafPage*)page;
     // auto lfp_=(LeafPage*)page2;
     // auto lfp2=static_cast<LeafPage*>(page);
@@ -843,7 +891,7 @@ Page *BPLUSTREE_TYPE::FindLeafPage(const KeyType &key,
       }else{
         page_id_t v=ip->Lookup(key,comparator_);
         assert(v!=-1);
-        // if(!conccur)
+        if(!conccur)
         {//没加锁就先unpin了，
           //unpin 父page
           buffer_pool_manager_->UnpinPage(curpageid,false);

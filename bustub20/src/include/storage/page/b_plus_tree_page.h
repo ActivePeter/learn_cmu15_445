@@ -91,8 +91,8 @@ class BPlusTreePage {
     latch_.unlock();
   }
   //到达需要分裂的size，中间节点和子节点不一样
-  // virtual bool ReachSplitSize()=0;
-  // virtual int SplitSize()=0;
+  virtual bool ReachSplitSize()=0;
+  virtual int SplitSize()=0;
  private:
   // member variable, attributes that both internal and leaf page share
   IndexPageType page_type_ __attribute__((__unused__));

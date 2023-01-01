@@ -65,8 +65,8 @@ class BPlusTreeLeafPage : public BPlusTreePage {
   void MoveFirstToEndOf(BPlusTreeLeafPage *recipient);
   void MoveLastToFrontOf(BPlusTreeLeafPage *recipient);
 
-  virtual bool ReachSplitSize() ;
-  virtual int SplitSize() ;
+  virtual bool ReachSplitSize() override;
+  virtual int SplitSize() override;
 
  private:
   void CopyNFrom(MappingType *items, int size);

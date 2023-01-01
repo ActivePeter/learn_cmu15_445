@@ -40,6 +40,7 @@ void InsertHelper(BPlusTree<GenericKey<8>, RID, GenericComparator<8>> *tree, con
     int64_t value = key & 0xFFFFFFFF;
     rid.Set(static_cast<int32_t>(key >> 32), value);
     index_key.SetFromInteger(key);
+    printf("insert k %ld\n",key);
     tree->Insert(index_key, rid, transaction);
   }
   delete transaction;
@@ -57,6 +58,7 @@ void InsertHelperSplit(BPlusTree<GenericKey<8>, RID, GenericComparator<8>> *tree
       int64_t value = key & 0xFFFFFFFF;
       rid.Set(static_cast<int32_t>(key >> 32), value);
       index_key.SetFromInteger(key);
+      printf("thread %ld insert k %ld\n",thread_itr,key);
       tree->Insert(index_key, rid, transaction);
     }
   }
@@ -197,7 +199,7 @@ TEST(BPlusTreeConcurrentTest, InsertTest2) {
   remove("test.log");
 }
 
-TEST(BPlusTreeConcurrentTest, DISABLED_DeleteTest1) {
+TEST(BPlusTreeConcurrentTest, DeleteTest1) {
   // create KeyComparator and index schema
   Schema *key_schema = ParseCreateStatement("a bigint");
   GenericComparator<8> comparator(key_schema);
@@ -240,7 +242,7 @@ TEST(BPlusTreeConcurrentTest, DISABLED_DeleteTest1) {
   remove("test.log");
 }
 
-TEST(BPlusTreeConcurrentTest, DISABLED_DeleteTest2) {
+TEST(BPlusTreeConcurrentTest, DeleteTest2) {
   // create KeyComparator and index schema
   Schema *key_schema = ParseCreateStatement("a bigint");
   GenericComparator<8> comparator(key_schema);
@@ -284,7 +286,7 @@ TEST(BPlusTreeConcurrentTest, DISABLED_DeleteTest2) {
   remove("test.log");
 }
 
-TEST(BPlusTreeConcurrentTest, DISABLED_MixTest) {
+TEST(BPlusTreeConcurrentTest, MixTest) {
   // create KeyComparator and index schema
   Schema *key_schema = ParseCreateStatement("a bigint");
   GenericComparator<8> comparator(key_schema);

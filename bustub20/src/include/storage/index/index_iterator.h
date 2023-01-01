@@ -17,8 +17,10 @@
 
 namespace bustub {
 
-#define INDEXITERATOR_TYPE IndexIterator<KeyType, ValueType, KeyComparator>
 
+class BPlusTreeConcurrentControl;
+
+#define INDEXITERATOR_TYPE IndexIterator<KeyType, ValueType, KeyComparator>
 //用于遍历b+树
 // 注：会持有page，销毁时应该unpin
 INDEX_TEMPLATE_ARGUMENTS
@@ -26,10 +28,17 @@ class IndexIterator {
   using LeafPage = BPlusTreeLeafPage<KeyType, ValueType, KeyComparator>;
  public:
   // you may define your own constructor based on your member variables
-  IndexIterator(Page* curpage,int pos,BufferPoolManager* bpman);
-  IndexIterator();
+  IndexIterator(BufferPoolManager* bpman);
+  // IndexIterator();
   ~IndexIterator();
+  
+  IndexIterator(IndexIterator &&) = default;
+  // IndexIterator& operator=(IndexIterator &&) = default;
 
+  IndexIterator(IndexIterator const&) = delete;
+  IndexIterator& operator=(IndexIterator const&) = delete;
+
+  void init(int pos,Page* curpage);
   bool isEnd() const;
 
   const MappingType &operator*();
@@ -60,12 +69,15 @@ class IndexIterator {
     return !(*this==itr);
     // throw std::runtime_error("unimplemented"); 
     }
-
+  BPlusTreeConcurrentControl& concurr(){
+    return *concurr_.get();
+  }
  private:
   // add your own private member variables here
   Page* curpage_;
   int pos_;
   BufferPoolManager *bpman_;
+  std::unique_ptr<BPlusTreeConcurrentControl> concurr_;
 };
 
 }  // namespace bustub
